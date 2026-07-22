@@ -1,0 +1,243 @@
+# ----------------------------------------
+# Configuration
+# ----------------------------------------
+
+POKEMON_HOME="${HOME}/.local/share/pokemon"
+POKEMON_CACHE="${HOME}/.cache/pokemon"
+
+POKEMON_STATE="${POKEMON_CACHE}/state"
+POKEMON_SPRITES="${POKEMON_CACHE}/sprites"
+
+POKEMON_DEX="${POKEMON_HOME}/pokedex"
+POKEMON_DATABASE="${POKEMON_HOME}/pokemon.db"
+
+# ----------------------------------------
+#  Runtime state
+# ----------------------------------------
+
+typeset -gA POKEMON
+
+POKEMON=(
+  steps 0
+  required 0
+  last ""
+)
+
+typeset -gA POKEMON_DB
+
+# ----------------------------------------
+#  Internal helpers
+# ----------------------------------------
+
+pokemon_save_state() {
+  mkdir -p "$POKEMON_CACHE"
+
+  : > "$POKEMON_STATE"
+
+  local key
+
+  for key in ${(k)POKEMON}; do
+    printf 'POKEMON[%q]=%q\n' \
+      "$key" \
+      "${POKEMON[$key]}"
+  done > "$POKEMON_STATE"
+}
+
+pokemon_load_state() {
+  [[ -f "$POKEMON_STATE" ]] && source "$POKEMON_STATE"
+}
+
+pokemon_new_egg() {
+  POKEMON[steps]=0
+  POKEMON_MIN_STEPS=100
+  POKEMON_MAX_STEPS=200
+
+  POKEMON[required]=$(( RANDOM % (POKEMON_MAX_STEPS - POKEMON_MIN_STEPS + 1) + POKEMON_MIN_STEPS ))
+
+  pokemon_save_state
+}
+
+pokemon_load_db() {
+  [[ ! -f "$POKEMON_DATABASE" ]] && return
+
+  while IFS=',' read -r id name; do
+    POKEMON_DB[$id]="$name"
+  done < "$POKEMON_DATABASE"
+}
+
+pokemon_show_sprite() {
+  local sprite="$1"
+
+  [[ ! -f "$sprite" ]] && return
+
+  if [[ -n "$ITERM_SESSION_ID" ]]; then
+    imgcat "$sprite"
+  fi
+}
+
+pokemon_sprite_path() {
+  printf "%s/%03d.png" "$POKEMON_SPRITES" "$1"
+}
+
+pokemon_init() {
+  mkdir -p "$POKEMON_HOME"
+  mkdir -p "$POKEMON_DEX"
+  mkdir -p "$POKEMON_SPRITES"
+
+  pokemon_load_db
+  pokemon_load_state
+
+  if [[ ! -f "$POKEMON_SPRITES/egg.png" ]]; then
+    echo "Pokémon sprites not installed."
+    echo "Run: make install"
+    echo
+  fi
+
+  if (( ${POKEMON[required]:-0} == 0 )); then
+    pokemon_new_egg
+    echo "A Pokémon egg appeared!"
+  fi
+}
+
+# ----------------------------------------
+#  Egg progress
+# ----------------------------------------
+
+pokemon_progress_text() {
+  local pct=$(( POKEMON[steps] * 100 / POKEMON[required] ))
+
+  if ((pct < 25)); then
+    echo "It looks like this Egg will take a long time to hatch."
+  elif ((pct < 50)); then
+    echo "What will hatch from this? It doesn't seem close to hatching."
+  elif ((pct < 75)); then
+    echo "It appears to move occasionally. It may be close to hatching."
+  elif ((pct < 100)); then
+    echo "Sounds can be heard coming from inside! It will hatch soon!"
+  else
+    echo "Oh? An egg is ready to hatch!"
+  fi
+}
+
+pokemon_step() {
+  (( POKEMON[steps]++ ))
+
+  if (( POKEMON[steps] >= POKEMON[required] )); then
+    pokemon_hatch
+  else
+    pokemon_save_state
+  fi
+}
+
+# ----------------------------------------
+#  Pokemon management
+# ----------------------------------------
+
+pokemon_random() {
+  local ids=("${(@k)POKEMON_DB}")
+  local count=${#ids[@]}
+
+  if (( count == 0 )); then
+    echo "No Pokémon database loaded."
+    return 1
+  fi
+
+  local index=$(( RANDOM % count + 1 ))
+
+  echo "${ids[$index]}"
+}
+
+pokemon_hatch() {
+  local id
+  local name
+
+  id=$(pokemon_random)
+  name=$(pokemon_name "$id")
+
+  POKEMON[last]="$id"
+
+  echo
+  echo "Oh? An egg is ready to hatch!"
+  echo
+  pokemon_show_sprite "$(pokemon_sprite_path "${POKEMON[last]}")"
+  echo "$name hatched from the Egg!"
+  echo
+
+  pokemon_add_to_dex "$id"
+
+  pokemon_new_egg
+}
+
+pokemon_add_to_dex() {
+  local pokemon="$1"
+
+  mkdir -p "$POKEMON_DEX"
+
+  touch "$POKEMON_DEX/$(printf "%03d" "$pokemon")"
+}
+
+pokemon_last() {
+  if [[ -z "${POKEMON[last]}" ]]; then
+    echo "No Pokémon have hatched yet."
+    return
+  fi
+
+  echo "Last Pokémon: ${POKEMON[last]}"
+  echo
+}
+
+# ----------------------------------------
+#  Pokemon lookups
+# ----------------------------------------
+
+pokemon_name() {
+  local id="$1"
+
+  echo "${POKEMON_DB[$id]}"
+}
+
+# ----------------------------------------
+#  Commands
+# ----------------------------------------
+
+egg() {
+  echo "----- Pokémon Egg -----"
+  pokemon_show_sprite "$POKEMON_SPRITES/egg.png"
+  echo "Steps: ${POKEMON[steps]} / ${POKEMON[required]}"
+  echo
+  pokemon_progress_text
+  echo
+}
+
+pokemon_debug() {
+    for key in ${(k)POKEMON}; do
+        echo "$key=${POKEMON[$key]}"
+    done
+}
+
+pokemon_reset_state() {
+  rm -f "$POKEMON_STATE"
+
+  POKEMON=(
+    steps 0
+    required 0
+    last ""
+  )
+
+  pokemon_new_egg
+
+  echo "Pokémon state reset."
+}
+
+# ----------------------------------------
+#  Hooks
+# ----------------------------------------
+
+autoload -Uz add-zsh-hook
+
+pokemon_preexec() {
+  pokemon_step
+}
+
+pokemon_init
+add-zsh-hook preexec pokemon_preexec
