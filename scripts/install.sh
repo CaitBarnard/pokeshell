@@ -6,8 +6,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 CACHE_DIR="${HOME}/.cache/pokemon"
+DATA_DIR="${HOME}/.local/share/pokemon"
+
 SPRITES_DIR="${CACHE_DIR}/sprites"
-DEX_DIR="${CACHE_DIR}/pokedex"
+DEX_DIR="${DATA_DIR}/pokedex"
+DATABASE_DEST="${DATA_DIR}/pokemon.db"
 
 POKEMONRC_DEST="${HOME}/.pokemonrc"
 
@@ -22,6 +25,7 @@ fi
 
 # Create directories
 mkdir -p "$CACHE_DIR"
+mkdir -p "$DATA_DIR"
 mkdir -p "$SPRITES_DIR"
 mkdir -p "$DEX_DIR"
 
@@ -48,7 +52,7 @@ else
   echo "Installed ~/.pokemonrc"
 fi
 
-cp "$SCRIPT_DIR/pokemon.db" "$CACHE_DIR/pokemon.db"
+cp "$SCRIPT_DIR/pokemon.db" "$DATABASE_DEST"
 echo "Installed pokemon.db"
 
 # Download egg sprite

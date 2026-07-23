@@ -150,40 +150,61 @@ pokemon_random() {
 pokemon_hatch() {
   local id
   local name
+  local pokedex_text
 
-  id=$(pokemon_random)
+  if ! id=$(pokemon_random); then
+    return 1
+  fi
+
   name=$(pokemon_name "$id")
 
   POKEMON[last]="$id"
+
+  if pokemon_seen "$id"; then
+    pokedex_text="Already registered in Pokédex."
+  else
+    pokemon_add_to_dex "$id"
+    pokedex_text="$name has been added to the Pokédex."
+  fi
 
   echo
   echo "Oh? An egg is ready to hatch!"
   echo
   pokemon_show_sprite "$(pokemon_sprite_path "${POKEMON[last]}")"
   echo "$name hatched from the Egg!"
+  echo "$pokedex_text"
   echo
-
-  pokemon_add_to_dex "$id"
 
   pokemon_new_egg
 }
+
+# ----------------------------------------
+#  Pokedex
+# ----------------------------------------
 
 pokemon_add_to_dex() {
   local pokemon="$1"
 
   mkdir -p "$POKEMON_DEX"
 
+  [[ "$pokemon" =~ ^[0-9]+$ ]] || return 1
+
   touch "$POKEMON_DEX/$(printf "%03d" "$pokemon")"
 }
 
-pokemon_last() {
-  if [[ -z "${POKEMON[last]}" ]]; then
-    echo "No Pokémon have hatched yet."
-    return
-  fi
+pokemon_dex_count() {
+  local count
 
-  echo "Last Pokémon: ${POKEMON[last]}"
-  echo
+  count=$(find "$POKEMON_DEX" -type f -regex '.*/[0-9][0-9]*$' | wc -l | tr -d ' ')
+
+  echo "$count"
+}
+
+pokemon_dex_entries() {
+  for file in "$POKEMON_DEX"/*; do
+    [[ -e "$file" ]] || continue
+    basename "$file"
+  done | sort -n
 }
 
 # ----------------------------------------
@@ -196,6 +217,18 @@ pokemon_name() {
   echo "${POKEMON_DB[$id]}"
 }
 
+pokemon_dex_name() {
+  local id="$1"
+
+  printf "#%03d - %s\n" "$id" "$(pokemon_name "$id")"
+}
+
+pokemon_seen() {
+  local id="$1"
+
+  [[ -f "$POKEMON_DEX/$id" ]]
+}
+
 # ----------------------------------------
 #  Commands
 # ----------------------------------------
@@ -206,6 +239,39 @@ egg() {
   echo "Steps: ${POKEMON[steps]} / ${POKEMON[required]}"
   echo
   pokemon_progress_text
+  echo
+}
+
+pokemon_last() {
+  local id="${POKEMON[last]}"
+
+  if [[ -z "$id" ]]; then
+    echo "No Pokémon have hatched yet."
+    return
+  fi
+
+  pokemon_show_sprite "$(pokemon_sprite_path "$id")"
+
+  echo
+  pokemon_dex_name "$id"
+  echo
+}
+
+pokedex() {
+  local caught
+  local id
+
+  caught=$(pokemon_dex_count)
+
+  echo "----- Pokédex -----"
+  echo
+  echo "$caught / 151"
+  echo
+
+  while read -r id; do
+    pokemon_dex_name "$id"
+  done < <(pokemon_dex_entries)
+
   echo
 }
 
